@@ -362,7 +362,8 @@ class RetrofitGenerator extends GeneratorForAnnotation<retrofit.RestApi> {
     String? definePath = method.peek("path")?.stringValue;
     paths.forEach((k, v) {
       final value = v.peek("value")?.stringValue ?? k.displayName;
-      definePath = definePath?.replaceFirst("{$value}", "\${${k.displayName}${k.type.element?.kind == ElementKind.ENUM ? '.name' : ''}}");
+      definePath = definePath?.replaceFirst("{$value}",
+          "\${${k.displayName}${k.type.element?.kind == ElementKind.ENUM ? '.name' : ''}}");
     });
     return literal(definePath);
   }
@@ -498,18 +499,23 @@ class RetrofitGenerator extends GeneratorForAnnotation<retrofit.RestApi> {
       final innerReturnType = _getResponseInnerType(returnType);
       if (_typeChecker(List).isExactlyType(returnType) ||
           _typeChecker(BuiltList).isExactlyType(returnType)) {
-        if (_isBasicType(innerReturnType)) {
+        if (innerReturnType == null || _isBasicType(innerReturnType)) {
           blocks.add(
             refer("await $_dioVar.fetch<List<dynamic>>")
                 .call([options])
                 .assignFinal(_resultVar)
                 .statement,
           );
-          blocks.add(refer('$_resultVar.data')
-              .propertyIf(thisNullable: returnType.isNullable, name: 'cast')
-              .call([], {}, [refer('${_displayString(innerReturnType)}')])
-              .assignFinal('value')
-              .statement);
+          if (innerReturnType == null) {
+            blocks
+                .add(refer('$_resultVar.data').assignFinal('value').statement);
+          } else {
+            blocks.add(refer('$_resultVar.data')
+                .propertyIf(thisNullable: returnType.isNullable, name: 'cast')
+                .call([], {}, [refer('${_displayString(innerReturnType)}')])
+                .assignFinal('value')
+                .statement);
+          }
         } else {
           blocks.add(
             refer("await $_dioVar.fetch<List<dynamic>>")
@@ -637,7 +643,7 @@ You should create a new class to encapsulate the response.
                   .assignVar('value')
                   .statement);
             }
-          } else if (!_isBasicType(secondType)) {
+          } else if (!_isBasicType(secondType) && !_isDynamicType(secondType)) {
             final Reference mapperCode;
             var future = false;
             switch (clientAnnotation.parser) {
@@ -685,6 +691,8 @@ You should create a new class to encapsulate the response.
                   .assignVar('value')
                   .statement);
             }
+          } else if (_isDynamicType(secondType)) {
+            blocks.add(Code("final value = $_resultVar.data!;"));
           } else {
             blocks.add(refer('$_resultVar.data')
                 .propertyIf(thisNullable: returnType.isNullable, name: 'cast')
@@ -1087,6 +1095,11 @@ You should create a new class to encapsulate the response.
         _typeChecker(num).isExactlyType(returnType) ||
         _typeChecker(Double).isExactlyType(returnType) ||
         _typeChecker(Float).isExactlyType(returnType);
+  }
+
+  /// source modify
+  bool _isDynamicType(DartType returnType) {
+    return returnType?.toString() == 'dynamic';
   }
 
   bool _isBasicInnerType(DartType returnType) {
